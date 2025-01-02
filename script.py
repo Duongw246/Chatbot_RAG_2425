@@ -5,10 +5,12 @@ from glob import glob
 
 # Define paths
 source_dir = r"D:\Documents\TDTU\ProjectIT\Chatbot_RAG_2024\data\unprocessed_documents"
+processed_dir = r"D:\Documents\TDTU\ProjectIT\Chatbot_RAG_2024\data\processed_documents"
 target_dir = r"D:\Documents\TDTU\ProjectIT\Chatbot_RAG_2024\data\documents"
 
-# Ensure the target directory exists
+# Ensure the target and processed directories exist
 os.makedirs(target_dir, exist_ok=True)
+os.makedirs(processed_dir, exist_ok=True)
 
 # Get all .doc and .docx files in the source directory
 doc_files = glob(os.path.join(source_dir, "*.doc"))
@@ -19,6 +21,13 @@ def convert(file):
     try:
         doc2docx.convert(file)
         print(f"Converted: {file}")
+
+        # Move the original .doc file to the processed directory
+        file_name = os.path.basename(file)
+        processed_file = os.path.join(processed_dir, file_name)
+        shutil.move(file, processed_file)
+        print(f"Moved to processed: {file_name}")
+
     except Exception as e:
         print(f"Failed to convert {file}: {e}")
 
