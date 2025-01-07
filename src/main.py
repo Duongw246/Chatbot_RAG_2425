@@ -1,6 +1,7 @@
 import time
 import streamlit as st
-from agent import get_llm_and_agent
+from agent import get_response, fusion_retriever, get_router, get_gemini_llm, call_retriever
+from seed_data import get_vectorstore
 from langchain_community.callbacks.streamlit import StreamlitCallbackHandler
 from langchain_community.chat_message_histories import StreamlitChatMessageHistory
 
@@ -34,7 +35,7 @@ def setup_chat_interface():
             st.markdown(msg['content'])
     return msgs
 
-def user_input(msgs, agent_executor):
+def user_input(msgs, llm, retriever):
     if prompt:= st.chat_input("Hãy hỏi tôi bất cứ điều gì về luật giao thông đường bộ!"):
         st.session_state.messages.append({"role": "user", "content": prompt})
         with st.chat_message("user"):
@@ -42,12 +43,14 @@ def user_input(msgs, agent_executor):
         start_time = time.time()   
         msgs.add_user_message(prompt)
         
-        # router = routing(prompt, llm)
+        # router = get_router(prompt, llm)
         # if router == "yes":
-        #     context = fusion_query(prompt, llm, retriever)
-        #     response = few_shot_fusion(msgs, llm, context)
-        # else:
+        #     context = fusion_retriever(prompt, llm, retriever)
+        #     response = get_response(msgs, llm, context)
+        # elif router == "no":
         #     response = llm(msgs)
+        # else:
+        #     response = "Không tìm thấy thông tin cho nội dung bạn tìm kiếm!"
         end_time = time.time()      
         with st.chat_message("assistant"):
             with st.spinner("Thinking..."):
@@ -56,24 +59,18 @@ def user_input(msgs, agent_executor):
                     {"role": msg["role"], "content": msg["content"]}
                     for msg in st.session_state.messages[:-1]
                 ]
-                
-                response = agent_executor.invoke(
-                    {
-                        "input": prompt,
-                        "chat_history": chat_history
-                    },
-                    {"callbacks": [st_callback]}
-                )
-                st.caption(f"Thời gian xử lý: {end_time - start_time:.2f} giây")
+                context = fusion_retriever(prompt, llm, retriever)
+                response = get_response(prompt,llm, context, chat_history)
                 st.session_state.messages.append({"role": "assistant", "content": response})
                 msgs.add_ai_message(response)
                 st.markdown(response)
                 
 def main():
     setup_page()
+    llm = get_gemini_llm()
+    retriever = call_retriever()
     msgs = setup_chat_interface()
-    agent_executor = get_llm_and_agent()
-    user_input(msgs, agent_executor)
+    user_input(msgs, llm, retriever)
     
 if __name__ == "__main__":
     main()
