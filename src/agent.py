@@ -1,12 +1,12 @@
 import streamlit as st
 from langchain.load import loads, dumps
-from seed_data import get_vectorstore
+from seed_data import get_retriever
 from langchain_pinecone import PineconeVectorStore
 from langchain_google_genai import GoogleGenerativeAI
 from langchain.tools.retriever import create_retriever_tool
 from langchain.agents import AgentExecutor, create_openai_functions_agent
 from langchain_community.retrievers import PineconeHybridSearchRetriever
-from langchain_core.prompts import  PromptTemplate, ChatPromptTemplate, FewShotChatMessagePromptTemplate, MessagesPlaceholder
+from langchain_core.prompts import  PromptTemplate, ChatPromptTemplate, FewShotChatMessagePromptTemplate, FewShotPromptTemplate
 from dotenv import load_dotenv
 
 load_dotenv()
@@ -15,33 +15,33 @@ PINECONE_API_KEY = st.secrets["PINECONE_API_KEY"]
 if not PINECONE_API_KEY:
     raise ValueError("PINECONE_API_KEY not found in environment variables")
 
-GEMINI_API_KEY = st.secrets["GOOGLE_API_KEY_1"]
+GEMINI_API_KEY = st.secrets["GOOGLE_API_KEY"]
 if not GEMINI_API_KEY:
     raise ValueError("GEMINI_API_KEY not found in environment variables")
 
 @st.cache_resource
 def get_gemini_llm():
     return GoogleGenerativeAI(model="gemini-1.5-pro", google_api_key=GEMINI_API_KEY, temperature=0)
-@st.cache_resource
-def call_retriever()-> PineconeHybridSearchRetriever:
-    # Pinecone storage and BM25 retriever
-    retriever = get_vectorstore(index_name="hybrid-rag")
-    retriever.top_k = 4
+# def call_retriever()-> PineconeHybridSearchRetriever:
+#     # Pinecone storage and BM25 retriever
+#     retriever = get_retriever(index_name="hybrid-rag")
+#     retriever.top_k = 4
     
-    return retriever
+#     return retriever
 
 def fusion_retriever(query: str, llm, vectorstore: PineconeVectorStore):
     system_template = """
         Bạn là một chuyên gia tạo ra nhiều câu hỏi liên quan từ câu query đầu vào của người dùng. 
         Trong mỗi câu output đừng giải thích gì thêm cả, chỉ cần tạo ra câu hỏi liên quan từ câu query đầu vào.
-        Hãy tạo ra 4 câu query liên quan tới query sau: "{query}"
+        Hãy tạo ra 3 câu query liên quan tới query sau: "{query}"
+        Output trả về sẽ là 3 câu query liên quan và câu query đầu vào.
         Output:
         ...
         ...
         ...
         ...
     """
-    retriever = vectorstore.as_retriever(search_kwargs={"k": 10})
+    retriever = get_retriever(index_name="hybrid-rag")
     prompt_template = PromptTemplate(
         input_variables=["query"],
         template=system_template,
@@ -78,13 +78,15 @@ def fusion_retriever(query: str, llm, vectorstore: PineconeVectorStore):
 #     "Tìm kiếm thông tin mới nhất về luật giao thông đường bộ",
 # )
 
-def get_router(query: str) -> str:
+def get_router(query: str, llm) -> str:
     system_template = """
         Bạn là một chuyên gia về phân loại câu hỏi.
         Công việc của bạn là phân loại câu hỏi xem câu hỏi đưa và có phải là một câu hỏi về luật giao thông hay không.
         Đối với những câu hỏi như "bạn là chatbot về luật gì?", hay "bạn hỗ trợ người dùng những vấn đề nào?" thì hãy trả lời là chatbot về luật giao thông.
         Nếu câu hỏi là một câu hỏi về luật giao thông thì hãy phản hồi "yes"
         Nếu là những câu hỏi về chào hỏi thông thường thì phản hồi "no"
+        Với những câu hỏi dùng để hỏi lại lịch sử trò chuyện trước đó mà liên quan đến yếu tố luật giao thông thì phản hồi "yes"
+        Với những câu hỏi dùng để hỏi lại lịch sử trò chuyện trước đó mà không liên quan đến luật giao thông thì cũng quy vào normal chatting và phản hổi "no"
         Nếu là những câu hỏi về các vấn đề khác không phải luật giao thông và những luật không phải là luật giao thông thì phản hồi "fail"
         Dưới đây là query của người dùng:
         <query>
@@ -96,11 +98,10 @@ def get_router(query: str) -> str:
         template=system_template,
     )
     prompt = prompt_template.format(query=query)
-    llm = GoogleGenerativeAI(model="gemini-1.5-pro", google_api_key=GEMINI_API_KEY, temperature=0)
     response = llm(prompt).strip()
     return response
 
-def get_response(query, llm, context, history):
+def get_legal_response(query, llm, context, history):
     examples = [
         {
             "input": "Người đi bộ có được phép băng qua đường tại nơi không có vạch kẻ đường không?",
@@ -111,14 +112,12 @@ def get_response(query, llm, context, history):
             "output": "Không thể trả lời câu hỏi này.",
         },
     ]
-    example_template = ChatPromptTemplate.from_messages(
-        [
-            ("human", "{input}"),
-            ("ai", "{output}"),
-        ]
+    example_template = PromptTemplate(
+        input_variables=["input", "output"],
+        template="Human: {input}\nAI: {output}\n",
     )
     
-    system_prompt = """
+    prefix = """
         # Bạn là một chuyên gia về luật giao thông
 
         Nhiệm vụ của bạn là cung cấp câu trả lời câu hỏi của người dùng thông qua context được truyền vào.
@@ -131,21 +130,33 @@ def get_response(query, llm, context, history):
         </context>
     """
     
-    few_shot_prompt = FewShotChatMessagePromptTemplate(
+    few_shot_prompt = FewShotPromptTemplate(
         examples=examples,
         example_prompt=example_template,
+        prefix=prefix,
+        suffix="Human: {question}\nAI:",
+        input_variables=["question", "context"],
     )
     context = [ctx[0].page_content for ctx in context[:5]]
-    final_prompt = ChatPromptTemplate.from_messages(
-        [
-            ("system", system_prompt),
-            history,
-            few_shot_prompt,
-            ("human", "{input}")
-        ]
-    )
-    final_prompt.format(input=query, context=context)
+    final_prompt = few_shot_prompt.format(question = query, context= context)
+    
     response = llm(final_prompt)
     return response
 
-    
+def get_normal_response(query, llm, history):
+    prompt_parts = [
+        ("system", "Bạn là một chatbot trả lời những câu hỏi về normal chatting")
+    ]
+
+    # Process the StreamlitChatMessageHistory to extract past messages
+    if history:
+        for message in history.messages:
+            role = "human" if message["role"] == "user" else "assistant"
+            prompt_parts.append((role, message["content"]))
+            
+    prompt_parts.append(("human", query))
+
+    # Create the prompt
+    prompt = ChatPromptTemplate(prompt_parts)
+    response = llm(prompt)
+    return response

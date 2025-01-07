@@ -1,7 +1,7 @@
 import time
 import streamlit as st
-from agent import get_response, fusion_retriever, get_router, get_gemini_llm, call_retriever
-from seed_data import get_vectorstore
+from seed_data import get_retriever
+from agent import get_legal_response, get_normal_response, fusion_retriever, get_router, get_gemini_llm
 from langchain_community.callbacks.streamlit import StreamlitCallbackHandler
 from langchain_community.chat_message_histories import StreamlitChatMessageHistory
 
@@ -15,20 +15,17 @@ def setup_page():
         page_icon="💬",
         layout="wide" 
     )
-
+@st.cache_data
 def setup_chat_interface():
     st.title("Legal Assistant")
     st.caption("Trợ lý AI được hỗ trợ bởi LangChain và Google")
 
-    with st.chat_message("assistant"):
-        st.markdown("Xin chào! Tôi là trợ lý pháp lý của bạn. Hãy nhập câu hỏi của bạn vào ô bên dưới để bắt đầu trò chuyện với tôi.")
-
     msgs = StreamlitChatMessageHistory(key="langchain_messages")
     if "messages" not in st.session_state:
         st.session_state.messages = [
-            {"role": "assistant", "content": "Tôi có thể giúp gì cho bạn?"}
+            {"role": "assistant", "content": "Xin chào! Tôi là trợ lý pháp lý của bạn. Hãy nhập câu hỏi của bạn vào ô bên dưới để bắt đầu trò chuyện với tôi."}
         ]
-        msgs.add_ai_message("Tôi có thể giúp gì cho bạn?")
+        msgs.add_ai_message("Xin chào! Tôi là trợ lý pháp lý của bạn. Hãy nhập câu hỏi của bạn vào ô bên dưới để bắt đầu trò chuyện với tôi.")
     
     for msg in st.session_state.messages:
         with st.chat_message(msg["role"]):
@@ -43,7 +40,7 @@ def user_input(msgs, llm, retriever):
         start_time = time.time()   
         msgs.add_user_message(prompt)
         
-        # router = get_router(prompt, llm)
+        router = get_router(prompt, llm)
         # if router == "yes":
         #     context = fusion_retriever(prompt, llm, retriever)
         #     response = get_response(msgs, llm, context)
@@ -59,8 +56,15 @@ def user_input(msgs, llm, retriever):
                     {"role": msg["role"], "content": msg["content"]}
                     for msg in st.session_state.messages[:-1]
                 ]
-                context = fusion_retriever(prompt, llm, retriever)
-                response = get_response(prompt,llm, context, chat_history)
+                if router == "yes":
+                    context = fusion_retriever(prompt, llm, retriever)
+                    response = get_legal_response(prompt,llm, context, chat_history)
+                elif router == "no":
+                    # response = get_normal_response(prompt, llm, chat_history)
+                    response = llm(prompt)
+                elif router == "fail":
+                    response = "Không tìm thấy thông tin cho nội dung bạn tìm kiếm!"
+
                 st.session_state.messages.append({"role": "assistant", "content": response})
                 msgs.add_ai_message(response)
                 st.markdown(response)
@@ -68,7 +72,7 @@ def user_input(msgs, llm, retriever):
 def main():
     setup_page()
     llm = get_gemini_llm()
-    retriever = call_retriever()
+    retriever = get_retriever("hybrid-rag")
     msgs = setup_chat_interface()
     user_input(msgs, llm, retriever)
     

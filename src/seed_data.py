@@ -46,14 +46,15 @@ def pinecone_hybrid_retriever(index_name: str,
     retriever.add_text(list_docs)
     return retriever
 
-def get_vectorstore(index_name: str, 
+@st.cache_resource
+def get_retriever(index_name: str, 
                     embeddings_name: str = "hiieu/halong_embedding") -> PineconeVectorStore:
     index = call_index(index_name, 768, "dotproduct")
     embeddings = HuggingFaceEmbeddings(model_name = embeddings_name)
-    # bm25_encoder = BM25Encoder().load("bm25-values.json")
-    # retriever = PineconeHybridSearchRetriever(index=index, embeddings=embeddings, sparse_encoder=bm25_encoder)
-    vectorstore = PineconeVectorStore(index=index, embedding=embeddings)
-    return vectorstore
+    bm25_encoder = BM25Encoder().default()
+    retriever = PineconeHybridSearchRetriever(index=index, embeddings=embeddings, sparse_encoder=bm25_encoder)
+    # vectorstore = PineconeVectorStore(index=index, embedding=embeddings)
+    return retriever
 
 def main():
     pinecone_hybrid_retriever('hybrid-rag', 'data', 768, 'dotproduct')
