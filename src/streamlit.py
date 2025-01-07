@@ -8,6 +8,8 @@ from langchain_huggingface import HuggingFaceEmbeddings
 from langchain_google_genai import GoogleGenerativeAI
 from langchain_core.prompts import PromptTemplate, FewShotPromptTemplate
 from langchain_community.retrievers import PineconeHybridSearchRetriever
+from langchain_community.callbacks.streamlit import StreamlitCallbackHandler
+from langchain_community.chat_message_histories import StreamlitChatMessageHistory
 
 # Load API keys
 # os.environ["GOOGLE_API_KEY"] = "AIzaSyD6fv2qZAcRc30uDjn96CbsM6pUJwLkdFE"
@@ -15,7 +17,7 @@ google_api_key = st.secrets["GOOGLE_API_KEY"]
 os.environ["GOOGLE_API_KEY"] = "AIzaSyCekUE-sNiAc_Jw-TFaLO11Xn18lLc-Lkw"
 # os.environ["PINECONE_API_KEY"] = "pcsk_3EcDrL_3mUVa7rhMVLMFBZJFPvgGEaunymPs7T5XcZXjBp9dF55S73miNRzeW2FMsFWcEb"
 pinecone_api_key = st.secrets["PINECONE_API_KEY"]
-pc = Pinecone(api_key=os.environ["PINECONE_API_KEY"])
+pc = Pinecone(api_key=os.environ["PINECONE_API_KEY"])  
 
 @st.cache_resource
 def retrieval_definition():
@@ -181,4 +183,4 @@ if prompt:
         with st.spinner("Thinking..."):
             st.caption(f"Thời gian xử lý: {end_time - start_time:.2f} giây")
             st.markdown(response)  
-    st.session_state.messages.append({"role": "assistant", "content": response})
+    st.session_state.messages.append({"role": "assistant", "content": response}) 
