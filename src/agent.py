@@ -1,10 +1,11 @@
 import streamlit as st
 from langchain.load import loads, dumps
 from seed_data import get_retriever
+from langchain.schema import Document as LC_Document
 from langchain_pinecone import PineconeVectorStore
 from langchain_google_genai import GoogleGenerativeAI
-from langchain.tools.retriever import create_retriever_tool
-from langchain.agents import AgentExecutor, create_openai_functions_agent
+# from langchain.tools.retriever import create_retriever_tool
+# from langchain.agents import AgentExecutor, create_openai_functions_agent
 from langchain_community.retrievers import PineconeHybridSearchRetriever
 from langchain_core.prompts import  PromptTemplate, ChatPromptTemplate, FewShotChatMessagePromptTemplate, FewShotPromptTemplate
 from dotenv import load_dotenv
@@ -20,16 +21,10 @@ if not GEMINI_API_KEY:
     raise ValueError("GEMINI_API_KEY not found in environment variables")
 
 @st.cache_resource
-def get_gemini_llm():
+def get_gemini_llm() -> GoogleGenerativeAI:
     return GoogleGenerativeAI(model="gemini-1.5-pro", google_api_key=GEMINI_API_KEY, temperature=0)
-# def call_retriever()-> PineconeHybridSearchRetriever:
-#     # Pinecone storage and BM25 retriever
-#     retriever = get_retriever(index_name="hybrid-rag")
-#     retriever.top_k = 4
-    
-#     return retriever
 
-def fusion_retriever(query: str, llm, vectorstore: PineconeVectorStore):
+def fusion_retriever(query: str, llm, vectorstore: PineconeVectorStore) -> list:
     system_template = """
         Bạn là một chuyên gia tạo ra nhiều câu hỏi liên quan từ câu query đầu vào của người dùng. 
         Trong mỗi câu output đừng giải thích gì thêm cả, chỉ cần tạo ra câu hỏi liên quan từ câu query đầu vào.
@@ -72,11 +67,6 @@ def fusion_retriever(query: str, llm, vectorstore: PineconeVectorStore):
     ]
     return reranked_results
 
-# retriever_tool = create_retriever_tool(
-#     call_retriever(),
-#     "Tìm kiếm thông tin",
-#     "Tìm kiếm thông tin mới nhất về luật giao thông đường bộ",
-# )
 
 def get_router(query: str, llm) -> str:
     system_template = """
@@ -101,7 +91,7 @@ def get_router(query: str, llm) -> str:
     response = llm(prompt).strip()
     return response
 
-def get_legal_response(query, llm, context, history):
+def get_legal_response(query: str, llm: any, context: list[LC_Document], history: any) -> str:
     examples = [
         {
             "input": "Người đi bộ có được phép băng qua đường tại nơi không có vạch kẻ đường không?",
@@ -143,7 +133,7 @@ def get_legal_response(query, llm, context, history):
     response = llm(final_prompt)
     return response
 
-def get_normal_response(query, llm, history):
+def get_normal_response(query: str, llm: any, history) -> str:
     prompt_parts = [
         ("system", "Bạn là một chatbot trả lời những câu hỏi về normal chatting")
     ]

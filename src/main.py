@@ -32,7 +32,7 @@ def setup_chat_interface():
             st.markdown(msg['content'])
     return msgs
 
-def user_input(msgs, llm, retriever):
+def user_input(msgs, llm, new_retriever, old_retriever):
     if prompt:= st.chat_input("Hãy hỏi tôi bất cứ điều gì về luật giao thông đường bộ!"):
         st.session_state.messages.append({"role": "user", "content": prompt})
         with st.chat_message("user"):
@@ -40,14 +40,8 @@ def user_input(msgs, llm, retriever):
         start_time = time.time()   
         msgs.add_user_message(prompt)
         
-        router = get_router(prompt, llm)
-        # if router == "yes":
-        #     context = fusion_retriever(prompt, llm, retriever)
-        #     response = get_response(msgs, llm, context)
-        # elif router == "no":
-        #     response = llm(msgs)
-        # else:
-        #     response = "Không tìm thấy thông tin cho nội dung bạn tìm kiếm!"
+        router, status = get_router(prompt, llm)
+
         end_time = time.time()      
         with st.chat_message("assistant"):
             with st.spinner("Thinking..."):
@@ -57,11 +51,14 @@ def user_input(msgs, llm, retriever):
                     for msg in st.session_state.messages[:-1]
                 ]
                 if router == "yes":
-                    context = fusion_retriever(prompt, llm, retriever)
-                    response = get_legal_response(prompt,llm, context, chat_history)
+                    if status == "new":
+                        context = fusion_retriever(prompt, llm, new_retriever)
+                        response = get_legal_response(msgs, llm, context)
+                    else:
+                        context = fusion_retriever(prompt, llm, old_retriever)
+                        response = get_legal_response(prompt, llm, context, msgs)
                 elif router == "no":
-                    # response = get_normal_response(prompt, llm, chat_history)
-                    response = llm(prompt)
+                    response = get_normal_response(prompt, llm, chat_history)
                 elif router == "fail":
                     response = "Không tìm thấy thông tin cho nội dung bạn tìm kiếm!"
 
