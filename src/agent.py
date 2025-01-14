@@ -1,5 +1,8 @@
 import streamlit as st
+import os
+from torch import argsort
 from langchain.load import loads, dumps
+from sentence_transformers import SentenceTransformer
 from seed_data import get_retriever
 from langchain.schema import Document as LC_Document
 from langchain_pinecone import PineconeVectorStore
@@ -12,11 +15,8 @@ from dotenv import load_dotenv
 
 load_dotenv()
 
-PINECONE_API_KEY = st.secrets["PINECONE_API_KEY"]
-if not PINECONE_API_KEY:
-    raise ValueError("PINECONE_API_KEY not found in environment variables")
-
 GEMINI_API_KEY = st.secrets["GOOGLE_API_KEY"]
+# os.environ["GOOGLE_API_KEY"] = "AIzaSyCekUE-sNiAc_Jw-TFaLO11Xn18lLc-Lkw"
 if not GEMINI_API_KEY:
     raise ValueError("GEMINI_API_KEY not found in environment variables")
 
@@ -24,7 +24,17 @@ if not GEMINI_API_KEY:
 def get_gemini_llm() -> GoogleGenerativeAI:
     return GoogleGenerativeAI(model="gemini-1.5-pro", google_api_key=GEMINI_API_KEY, temperature=0)
 
-def fusion_retriever(query: str, llm, vectorstore: PineconeVectorStore) -> list:
+@st.cache_resource
+def get_encoder_model(model_name: str ="hiieu/halong_embedding") -> SentenceTransformer:
+    return SentenceTransformer(model_name)
+
+def fusion_ranker(query: str, vectorstore: PineconeVectorStore) -> list:
+    # Gọi llm
+    llm = get_gemini_llm()
+    #Gọi retriever
+    retriever = get_retriever(index_name="new-documents-hybrid")
+    retriever.top_k = 15
+    #Prompting để tạo ra 3 câu query liên quan từ câu query đầu vào (Multi-query)
     system_template = """
         Bạn là một chuyên gia tạo ra nhiều câu hỏi liên quan từ câu query đầu vào của người dùng. 
         Trong mỗi câu output đừng giải thích gì thêm cả, chỉ cần tạo ra câu hỏi liên quan từ câu query đầu vào.
@@ -36,16 +46,18 @@ def fusion_retriever(query: str, llm, vectorstore: PineconeVectorStore) -> list:
         ...
         ...
     """
-    retriever = get_retriever(index_name="hybrid-rag")
     prompt_template = PromptTemplate(
         input_variables=["query"],
         template=system_template,
     )
     prompt = prompt_template.format(query=query)
     get_response = llm(prompt)
+    
+    #Xử lý list các câu query trả về từ llm
     list_query = [line.strip() for line in get_response.split("\n") if line.strip()]
     retrieved_list = [retriever.invoke(query) for query in list_query]
     
+    # Dùng RMM để rerank các docs được trả về từ retriever theo score
     lst=[]
     for ddxs in retrieved_list:
         for ddx in ddxs:
@@ -64,11 +76,27 @@ def fusion_retriever(query: str, llm, vectorstore: PineconeVectorStore) -> list:
     reranked_results = [
         (loads(doc), score)
         for doc, score in sorted(fused_scores.items(), key=lambda x: x[1], reverse=True)
-    ]
+    ][:5]
     return reranked_results
 
+def original_ranker(query: str, ranker: SentenceTransformer, vectorstore: PineconeVectorStore) -> list:
+    # Goi retriever
+    retriever = get_retriever(index_name="new-documents-hybrid")
+    retriever.top_k = 15
+    retrieved_docs = retriever.invoke(query) # Trả về list các LC_Document
 
-def get_router(query: str, llm) -> str:
+    # Tính similarity giữa câu query và các docs được trả về
+    docs_list = [doc.page_content for doc in retrieved_docs]
+    embedded_query = ranker.encode([query])
+    embedded_sentences = ranker.encode(docs_list)
+    similarities = ranker.similarity(embedded_query, embedded_sentences).flatten()
+    
+    # Sắp xếp các docs theo thứ tự similarity và chỉ lấy top 5
+    sorted_indices = argsort(similarities, descending=True)
+    ranked_result = [retrieved_docs[i] for i in sorted_indices][:5]
+    return ranked_result
+
+def get_router(query: str, llm) -> str: # Vì chưa sử dụng được Agent nên sẽ tạm định nghĩa router ở đây
     system_template = """
         Bạn là một chuyên gia về phân loại câu hỏi.
         Công việc của bạn là phân loại câu hỏi xem câu hỏi đưa và có phải là một câu hỏi về luật giao thông hay không.
@@ -91,7 +119,7 @@ def get_router(query: str, llm) -> str:
     response = llm(prompt).strip()
     return response
 
-def get_legal_response(query: str, llm: any, context: list[LC_Document], history: any) -> str:
+def legal_response(query: str, llm: any, context: list[LC_Document], history: any) -> str:
     examples = [
         {
             "input": "Người đi bộ có được phép băng qua đường tại nơi không có vạch kẻ đường không?",
@@ -127,26 +155,30 @@ def get_legal_response(query: str, llm: any, context: list[LC_Document], history
         suffix="Human: {question}\nAI:",
         input_variables=["question", "context"],
     )
-    context = [ctx[0].page_content for ctx in context[:5]]
+    context = [ctx.page_content for ctx in context]
     final_prompt = few_shot_prompt.format(question = query, context= context)
     
     response = llm(final_prompt)
     return response
 
-def get_normal_response(query: str, llm: any, history) -> str:
-    prompt_parts = [
-        ("system", "Bạn là một chatbot trả lời những câu hỏi về normal chatting")
-    ]
-
-    # Process the StreamlitChatMessageHistory to extract past messages
-    if history:
-        for message in history.messages:
-            role = "human" if message["role"] == "user" else "assistant"
-            prompt_parts.append((role, message["content"]))
-            
-    prompt_parts.append(("human", query))
-
-    # Create the prompt
-    prompt = ChatPromptTemplate(prompt_parts)
+def normal_response(query: str, llm: GoogleGenerativeAI, history) -> str:
+    # Định nghĩa template
+    template = ChatPromptTemplate([
+        ("system", "Bạn là một chatbot trả lời những câu hỏi về normal chatting"),
+        ("human", "{query}"),
+    ])
+    
+    # Tạo prompt từ template và thay thế placeholder
+    prompt_value = template.invoke({"query": query})  # Trả về ChatPromptValue
+    prompt = prompt_value.to_string()  # Chuyển đổi thành chuỗi
+    
+    # Gửi prompt đến LLM và nhận phản hồi
     response = llm(prompt)
     return response
+
+# prompt = "Người đi bộ có được phép băng qua đường tại nơi không có vạch kẻ đường không?"
+# llm = get_gemini_llm()
+# retriever = get_retriever("new-documents-hybrid")
+# encode_model = get_encoder_model()
+# result = original_ranker(prompt, encode_model, retriever)
+# print(result)

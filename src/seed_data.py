@@ -2,7 +2,7 @@ import re, glob
 import streamlit as st
 from pathlib import Path
 from docx import Document
-from langchain.schema import LC_Document
+from langchain.schema import Document as LC_Document
 from langchain.retrievers import PineconeHybridSearchRetriever
 from pinecone_text.sparse import BM25Encoder
 from langchain_pinecone import PineconeVectorStore
