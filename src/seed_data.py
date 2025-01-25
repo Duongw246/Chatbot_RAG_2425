@@ -73,9 +73,9 @@ def call_index(index_name: str,
 
 def pinecone_hybrid_retriever(index_name: str,
                   path: str,  
-                  dimentions: int = 768, 
+                  dimentions: int = 1024, 
                   metric: str = "dotproduct",
-                  embeddings_name: str = "hiieu/halong_embedding",
+                  embeddings_name: str = "BAAI/bge-m3",
                   article_chunk: bool = True) -> PineconeHybridSearchRetriever:
     embeddings = HuggingFaceEmbeddings(model_name=embeddings_name)
     if article_chunk == False:    
@@ -86,7 +86,7 @@ def pinecone_hybrid_retriever(index_name: str,
     index = call_index(index_name, dimentions, metric)
     bm25_encoder = BM25Encoder().default()
     
-    splitter = RecursiveCharacterTextSplitter(chunk_size=512, chunk_overlap=100)
+    splitter = RecursiveCharacterTextSplitter(chunk_size=8000, chunk_overlap=512)
     docs = splitter.split_documents(documents)
     list_docs = [doc.page_content for doc in docs]
     list_metadatas = [doc.metadata for doc in docs]
@@ -99,8 +99,9 @@ def pinecone_hybrid_retriever(index_name: str,
 
 @st.cache_resource
 def get_retriever(index_name: str, 
-                    embeddings_name: str = "hiieu/halong_embedding") -> PineconeVectorStore:
-    index = call_index(index_name, 768, "dotproduct")
+                embeddings_name: str = "BAAI/bge-m3"
+                ) -> PineconeVectorStore:
+    index = call_index(index_name, 1024, "dotproduct")
     embeddings = HuggingFaceEmbeddings(model_name = embeddings_name)
     bm25_encoder = BM25Encoder().default()
     retriever = PineconeHybridSearchRetriever(index=index, embeddings=embeddings, sparse_encoder=bm25_encoder)
@@ -108,7 +109,7 @@ def get_retriever(index_name: str,
     return retriever
 
 def main():
-    pinecone_hybrid_retriever('hybrid-rag', 'data', 768, 'dotproduct')
+    pinecone_hybrid_retriever('hybrid-rag', 'data', 1024, 'dotproduct')
     
 if __name__ == "__main__":
     main()
