@@ -2,8 +2,9 @@ import re, glob
 import streamlit as st
 from pathlib import Path
 from docx import Document
+from postgres import get_storage, PostgresStore
 from langchain.schema import Document as LC_Document
-from langchain.retrievers import PineconeHybridSearchRetriever
+from langchain.retrievers import PineconeHybridSearchRetriever, ParentDocumentRetriever
 from pinecone_text.sparse import BM25Encoder
 from langchain_pinecone import PineconeVectorStore
 from pinecone import Pinecone, ServerlessSpec
@@ -77,7 +78,7 @@ def pinecone_hybrid_retriever(index_name: str,
                   metric: str = "dotproduct",
                   embeddings_name: str = "BAAI/bge-m3",
                   article_chunk: bool = True) -> PineconeHybridSearchRetriever:
-    embeddings = HuggingFaceEmbeddings(model_name=embeddings_name)
+    embeddings = HuggingFaceEmbeddings(embeddings_name)
     if article_chunk == False:    
         loader = DirectoryLoader(path=path, glob="**/*.docx")
         documents = loader.load()
@@ -96,20 +97,32 @@ def pinecone_hybrid_retriever(index_name: str,
                                               alpha=0.7)
     retriever.add_text(texts= list_docs, metadatas= list_metadatas)
     return retriever
-
 @st.cache_resource
 def get_retriever(index_name: str, 
-                embeddings_name: str = "BAAI/bge-m3"
-                ) -> PineconeVectorStore:
-    index = call_index(index_name, 1024, "dotproduct")
-    embeddings = HuggingFaceEmbeddings(model_name = embeddings_name)
+                embeddings_name: str = "BAAI/bge-m3", 
+                embedding_dim: int = 1024) -> PineconeVectorStore:
+    index = call_index(index_name, embedding_dim, "dotproduct")
+    embeddings = HuggingFaceEmbeddings(embeddings_name)
     bm25_encoder = BM25Encoder().default()
     retriever = PineconeHybridSearchRetriever(index=index, embeddings=embeddings, sparse_encoder=bm25_encoder)
     # vectorstore = PineconeVectorStore(index=index, embedding=embeddings)
     return retriever
 
-def main():
-    pinecone_hybrid_retriever('hybrid-rag', 'data', 1024, 'dotproduct')
-    
-if __name__ == "__main__":
-    main()
+@st.cache_resource
+def postgres_retriever(collection_name: str,
+                    port: int = 5432,
+                    embedding_name: str = "hiieu/halong_embedding",
+                    database_name: str = "postgres",
+                    database_user: str = "postgres",
+                    database_password: str = "duongw"):
+    store, DATABASE_URL = get_storage(collection_name=collection_name,
+                                      port=port,
+                                      embedding_name=embedding_name,
+                                      database_name=database_name,
+                                      database_user=database_user, 
+                                      database_password=database_password)   
+    retriever = ParentDocumentRetriever(
+        vectorstore=store,
+        docstore=PostgresStore(DATABASE_URL),
+        child_splitter=RecursiveCharacterTextSplitter(chunk_size=512))
+    return retriever

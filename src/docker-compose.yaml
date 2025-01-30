@@ -1,0 +1,10 @@
+version: "3"
+services:
+  postgres:
+    build: ./
+    ports:
+      - "5432:5432"
+    environment:
+      POSTGRES_USER: duongw
+      POSTGRES_PASSWORD: duongw
+      POSTGRES_DB: vectordb
