@@ -16,7 +16,7 @@ pip install langchain_google_genai
 pip install langchain_community
 ```
 
-##2️⃣ Database Setup
+## 2️⃣ Database Setup
 📌 Step 1: Start PostgreSQL with Docker
 ```sh
 docker compose up -d
@@ -31,7 +31,7 @@ Add data to old_legal:
 ```sh
 pg_restore -U postgres -d old_legal database/old_law.dump
 ```
-3️⃣ Run the Application
+## 3️⃣ Run the Application
 Navigate to the src folder and start the Streamlit application:
 ```sh
 cd src
