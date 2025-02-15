@@ -1,118 +1,25 @@
 import streamlit as st
-import os
-import torch
-from seed_data import get_retriever
-from torch import argsort
-from langchain.load import loads, dumps
-from sentence_transformers import SentenceTransformer
 from langchain.schema import Document as LC_Document
-from langchain_pinecone import PineconeVectorStore
 from langchain_google_genai import GoogleGenerativeAI
-import vertexai
-from vertexai.generative_models import GenerativeModel
-# from langchain.tools.retriever import create_retriever_tool
-# from langchain.agents import AgentExecutor, create_openai_functions_agent
-from langchain_community.retrievers import PineconeHybridSearchRetriever
-from langchain_core.prompts import  PromptTemplate, ChatPromptTemplate, FewShotChatMessagePromptTemplate, FewShotPromptTemplate
+from langchain_core.prompts import  PromptTemplate
 from dotenv import load_dotenv
 
-load_dotenv()
+load_dotenv(override=True)
 
 GEMINI_API_KEY = st.secrets["GOOGLE_API_KEY"]
-# os.environ["GOOGLE_API_KEY"] = "AIzaSyCekUE-sNiAc_Jw-TFaLO11Xn18lLc-Lkw"
+
 if not GEMINI_API_KEY:
     raise ValueError("GEMINI_API_KEY not found in environment variables")
-PROJECT_ID = st.secrets["MY_PROJECT_ID"]
-if not PROJECT_ID:
-    raise ValueError("PROJECT_ID not found in environment variables")
-
-vertexai.init(project=PROJECT_ID, location="us-central1") 
 
 @st.cache_resource
-def get_gemini_llm() -> GoogleGenerativeAI:
+def get_gemini_pro() -> GoogleGenerativeAI:
     return GoogleGenerativeAI(model="gemini-1.5-pro", google_api_key=GEMINI_API_KEY, temperature=0)
 
 @st.cache_resource
-def get_vertex_llm() -> GenerativeModel:
-    return GenerativeModel("gemini-1.5-pro")
+def get_gemini_flash() -> GoogleGenerativeAI:
+    return GoogleGenerativeAI(model="gemini-1.5-flash", google_api_key=GEMINI_API_KEY, temperature=0)
 
-# @st.cache_resource
-# def get_encoder_model(model_name: str ="BAAI/bge-m3") -> SentenceTransformer:
-#     return SentenceTransformer(model_name)
 
-# def fusion_ranker(query: str, vectorstore: PineconeVectorStore, llm: GenerativeModel) -> list:
-#     # Gọi llm
-#     # llm = get_gemini_llm()
-#     # llm = get_vertex_llm()
-#     #Gọi retriever
-#     retriever = get_retriever(index_name="new-documents-hybrid")
-#     retriever.top_k = 15
-#     #Prompting để tạo ra 3 câu query liên quan từ câu query đầu vào (Multi-query)
-#     system_template = """
-#         Bạn là một chuyên gia tạo ra nhiều câu hỏi liên quan từ câu query đầu vào của người dùng. 
-#         Trong mỗi câu output đừng giải thích gì thêm cả, chỉ cần tạo ra câu hỏi liên quan từ câu query đầu vào.
-#         Hãy tạo ra 3 câu query liên quan tới query sau: "{query}"
-#         Output trả về sẽ là 3 câu query liên quan và câu query đầu vào.
-#         Output:
-#         ...
-#         ...
-#         ...
-#         ...
-#     """
-#     prompt_template = PromptTemplate(
-#         input_variables=["query"],
-#         template=system_template,
-#     )
-#     prompt = prompt_template.format(query=query)
-#     # get_response = llm(prompt)
-#     get_response = llm.generate_content(prompt)
-#     #Xử lý list các câu query trả về từ llm
-#     list_query = [line.strip() for line in get_response.split("\n") if line.strip()]
-#     retrieved_list = [original_ranker(query, get_encoder_model, retriever) for query in list_query]
-    
-#     # Dùng RMM để rerank các docs được trả về từ retriever theo score
-#     lst=[]
-#     for ddxs in retrieved_list:
-#         for ddx in ddxs:
-#             if ddx.page_content not in lst:
-#                 lst.append(ddx.page_content)
-                
-#     fused_scores = {}
-#     k=60
-#     for docs in retrieved_list:
-#         for rank, doc in enumerate(docs):
-#             doc_str = dumps(doc)
-#             if doc_str not in fused_scores:
-#                 fused_scores[doc_str] = 0
-#             fused_scores[doc_str] += 1 / (rank + k)
-
-#     reranked_results = [
-#         (loads(doc), score)
-#         for doc, score in sorted(fused_scores.items(), key=lambda x: x[1], reverse=True)
-#     ][:5]
-#     return reranked_results
-
-# def original_ranker(query: str, ranker: SentenceTransformer, index_name: str) -> list:
-#     #GPU
-#     device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
-    
-#     #Ranker
-#     ranker = ranker.to(device)
-    
-#     # Goi retriever
-#     retriever = get_retriever(index_name=index_name)
-#     retriever.top_k = 15
-#     retrieved_docs = retriever.invoke(query) # Trả về list các LC_Document
-
-#     # Tính similarity giữa câu query và các docs được trả về
-#     docs_list = [doc.page_content for doc in retrieved_docs]
-#     embedded_query = ranker.encode([query], convert_to_tensor=True, device=device)
-#     embedded_sentences = ranker.encode(docs_list, convert_to_tensor=True, device=device)
-#     similarities = (ranker.similarity(embedded_query, embedded_sentences).flatten())
-#     # Sắp xếp các docs theo thứ tự similarity và chỉ lấy top 5
-#     sorted_indices = argsort(similarities, descending=True)
-#     ranked_result = [retrieved_docs[i] for i in sorted_indices][:5]
-#     return ranked_result
 def query_transform(query: str, model_choice) -> str:
     system_template = """
     Bạn là một chuyên gia về việc chuyển đổi câu hỏi.
@@ -148,18 +55,20 @@ def query_transform(query: str, model_choice) -> str:
         template=system_template,
     )
     final_prompt = prompt.format(query=query)
-    if model_choice == "Vertex":
-        llm = get_vertex_llm()
-        response = llm.generate_content(final_prompt).text
+     
+    if model_choice == "gemini-1.5-pro":
+        llm = get_gemini_pro()
+        response = llm(final_prompt)
         
-    elif model_choice == "Gemini":
-        llm = get_gemini_llm()
+    elif model_choice == "gemini-1.5-flash":
+        llm = get_gemini_flash()
         response = llm(final_prompt)
     return response
 
 def get_router(query: str, model_choice) -> str: # Vì chưa sử dụng được Agent nên sẽ tạm định nghĩa router ở đây
     system_template = """
         Bạn là một chuyên gia phân loại câu hỏi, chuyên xác định xem câu hỏi có liên quan đến luật giao thông hay không.
+    
         
         ### Hướng dẫn:
         1. **Phân loại câu hỏi liên quan đến luật giao thông:**
@@ -176,7 +85,8 @@ def get_router(query: str, model_choice) -> str: # Vì chưa sử dụng đượ
         - Nếu câu hỏi chỉ rõ luật cũ, trả lời: **"old"**
         - Nếu câu hỏi không liên quan đến luật giao thông, trả lời: **"none"**
         
-        Nếu người dùng hỏi một câu hỏi về lịch sử đoạn chat trước đó
+        3. Khi người dùng muốn so sánh luật cũ và luật mới:
+        - Khi người dùng muốn so sánh luật cũ và luật mới và một trong hai luật cũ hoặc mới dựa trên query của người dùng, trả lời: **"compare"**
         
         ### Đầu ra:
         - Trả lời theo định dạng: `<phân loại câu hỏi>,<loại luật giao thông>`
@@ -190,95 +100,153 @@ def get_router(query: str, model_choice) -> str: # Vì chưa sử dụng đượ
         - **Câu hỏi không phải về luật:**
         - Query: "Hôm nay thời tiết như thế nào?"
         - Trả lời: `no,none`
+        
+        - **Câu hỏi về so sánh luật cũ và luật mới khi cả luật mới và luật cũ dựa theo câu hỏi của người dùng:**
+        - Query: "So sánh luật cũ và luật mới về việc điều khiển xe máy"
+        - Trả lời: `compare,none`
 
         Dưới đây là câu hỏi từ người dùng:
         <query>
         {query}
         </query>
     """
-
     prompt_template = PromptTemplate(
         input_variables=["query"],
         template=system_template,
     )
     prompt = prompt_template.format(query=query)
-    if model_choice == "Vertex":
-        llm = get_vertex_llm()
-        response = llm.generate_content(prompt).text
-        
-    elif model_choice == "Gemini":
-        llm = get_gemini_llm()
+ 
+    if model_choice == "gemini-1.5-pro":
+        llm = get_gemini_pro()
         response = llm(prompt)
+        
+    elif model_choice == "gemini-1.5-flash":
+        llm = get_gemini_flash()
+        response = llm(prompt)
+        
     return response.strip()
 
-# def history_response(query: str, model_choice, chat_history) -> str:
-#     template = """
-#         Bạn là một chuyên gia về lịch sử trò chuyện về luật giao thông đường bộ và các đoạn chatting thông thường.
-#         Nhiệm vụ của bạn là trả lời câu hỏi của người dùng dựa vào lịch sử trò chuyện đã có.
-#         Đây là câu hỏi của người dùng:
-#         {query}
-        
-#         Đây chính là lịch sử trò chuyện trước đó:
-#         {chat_history}
-        
-#         Yêu cầu về lịch sử trò chuyện:
-#         - Nếu người dụng hỏi lại câu đã có trong lịch sử trò chuyện thì sử dụng lại câu trả lời trước đó để trả lời.
-#         - Nếu người dùng cần tổng hợp lại những thông tin đã được cung cấp trong lịch sử trò chuyện thì dựa vào tất cả câu trả lời đó để trả lời.
-#         - Nếu người dùng yêu cầu so sánh các luật đã được lưu trong lịch sử trò chuyện thì dựa vào tất cả câu trả lời đó để trả lời.
-#     """
-#     prompt = PromptTemplate.from_template(template)
-#     final_prompt = prompt.format(query = query, 
-#                                  chat_history=chat_history)
-    
-#     if model_choice == "Vertex":
-#         llm = get_vertex_llm()
-#         response = llm.generate_content(final_prompt).text
-        
-#     elif model_choice == "Gemini":
-#         llm = get_gemini_llm()
-#         response = llm(final_prompt)
-#     # response = llm.generate_content(final_prompt)
-#     return response
+def compare_legal(query: str, model_choice, context_old: list[LC_Document], context_new: list[LC_Document]) -> str:
+    template = """
+        # Bạn là một chuyên gia về luật giao thông đường bộ
 
-def legal_response(query: str, model_choice, context: list[LC_Document], chat_history) -> str:
-    examples = [
-        {
-            "input": "Người đi bộ có được phép băng qua đường tại nơi không có vạch kẻ đường không?",
-            "output": "Người đi bộ chỉ được phép băng qua đường tại các vị trí có vạch kẻ đường hoặc nơi có tín hiệu giao thông cho phép. Nếu không có vạch kẻ đường, người đi bộ phải đảm bảo an toàn và không gây cản trở giao thông.",
-        },
-        {
-            "input": "Tốc độ tối đa được phép chạy trong khu dân cư là bao nhiêu?",
-            "output": "Không thể trả lời câu hỏi này.",
-        },
-    ]
-    example_template = PromptTemplate(
-        input_variables=["input", "output"],
-        template="Human: {input}\nAI: {output}\n",
-    )
-    
-    prefix = """
-        # Bạn là một chuyên gia về luật giao thông
-
-        Nhiệm vụ của bạn là cung cấp câu trả lời câu hỏi của người dùng thông qua context được truyền vào.
-        Nếu trong context không bao gồm nội dung nào liên quan để có thể trả lời được câu hỏi thì hãy trả lời "Không thể trả lời câu hỏi này." và không nói gì thêm.
-        Tuyệt đối chỉ được dùng thông tin trong context để trả lời câu hỏi.
+        Nhiệm vụ của bạn là thực hiện so sánh sự khác nhau giữa luật mới và luật cũ dựa trên query của người dùng.
         
-        Đây là lịch sử đoạn chat trước đó:
-        {chat_history}
+        Đây là câu hỏi của người dùng: {query}
         
-        Yêu cầu về lịch sử đoạn chat:
-        - Nếu người dùng hỏi lại câu đã có trong đoạn chat thì sử dụng lại câu trả lời trước đó để trả lời.
-        - Nếu người dùng cần tổng hợp lại những thông tin về luật giao thông đã được cung cấp trong lịch sử chat thì dựa vào tất cả câu trả lời đó để trả lời.
+        Dưới đây context của luật cũ được cung cấp để bạn trả lời câu hỏi:   
+        {context_old}
         
-        Dưới đây context được cung cấp để bạn trả lời câu hỏi:   
-        {context}
+        Dưới đây context của luật mới được cung cấp để bạn trả lời câu hỏi:
+        {context_new}
         
-        Yêu cầu của nội dung câu trả lời:
+        ## Yêu cầu của nội dung câu trả lời:
         - Hãy ngắt dòng trong phần nội dung để in ra một cách hợp lý, dễ đọc.
         - Khi ngắt dòng thì chữ đầu dòng phải viết hoa.
         - Trong nội dung khi có các ý nhỏ như a), b), c) thì hãy sắp xếp theo thứ tự và ngắt dòng giữa các ý nhỏ a), b), c), ... đó.
         - Trong context bao gồm page_content chứa nội dung văn bản và metadata của băn bản.
         - Metadata của văn bản bao gồm title, source, và article_title và page_content là nội dung câu trả lời được dùng trong format dưới đây.
+        - Khi người dùng yêu cầu tóm tắt lại nội dung văn bản thì trả lời ngắn gọn và súc tích. Đoạn tóm tắt sẽ được format theo format của câu trả lời và nội dung sẽ được trình bày ngắn gọn và súc tích nhất có thể.
+        
+        Ví dụ về format của câu trả lời:
+        Nếu context có nội dung sau:  
+        page_content: "1. Khi người tham gia giao thông không chấp hành: a) Giải thích rõ; b) Áp dụng biện pháp ngăn chặn; c) Sử dụng vũ lực khi cần thiết."
+        metadata: "source": "36_2024_QH15_444251", "title": "Luật Giao thông", "article_title": "Điều 73" 
+        Câu trả lời cần được trình bày như sau:
+        
+        **Nguồn văn bản:** 36_2024_QH15_444251  
+        **Tên văn bản:** Luật Giao thông  
+        **Điều 73**: <Nội dung điều 73>  
+        **Nội dung:**  
+        1. Khi người tham gia giao thông không chấp hành:\n
+        \ta) Giải thích rõ.\n
+        \tb) Áp dụng biện pháp ngăn chặn.\n 
+        \tc) Sử dụng vũ lực khi cần thiết.\n
+        
+        Đây là format của câu trả lời:
+        **Nguồn văn bản:** <source>\n
+        **Tên văn bản:** <title>\n
+        **<article>:** <article_title>\n
+        Nội dung:\n 
+        <page_content>
+
+        # Hướng dẫn khi so sánh:
+        - Khi so sánh thì trước tiên phải ghi luật mới và luật cũ ra theo format
+        - Khi so sánh thì cần phải có điểm giống và khác giữa luật mới và luật cũ
+        - Hãy kẻ bảng để người dùng dễ dàng nhìn thấy điểm giống và khác giữa luật mới và luật cũ
+        
+        Dưới đây là ví dụ khi về kết quả so sánh:
+        **Luật cũ (2016)**:\n
+        Nguồn văn bản: 46_2016_QH13_123456\n
+        Tên văn bản: Luật Giao thông Đường bộ\n
+        Điều 9: ...\n
+        Nội dung:\n
+        - Tốc độ tối đa trên đường cao tốc là 100 km/h.\n
+        - Tốc độ tối đa trong khu vực đô thị là 60 km/h\n
+        
+        Luật mới (2024):\n
+        Nguồn văn bản: 36_2024_QH15_444251\n
+        Tên văn bản: Luật Giao thông Đường bộ (Sửa đổi)\n
+        Điều 9: ...\n
+        Nội dung:\n
+        - Tốc độ tối đa trên đường cao tốc là 120 km/h.\n
+        - Tốc độ tối đa trong khu vực đô thị là 50 km/h.\n
+        
+        So sánh:
+        | Tiêu chí                | Luật Cũ (2016) | Luật Mới (2024) |  
+        |------------------------|--------------|--------------|  
+        | **Tốc độ trên cao tốc** | 100 km/h     | 120 km/h (Tăng 20 km/h) |  
+        | **Tốc độ trong đô thị** | 60 km/h      | 50 km/h (Giảm 10 km/h) | 
+        
+        Nhận xét:
+        - **Tốc độ tối đa trên cao tốc đã tăng từ 100 km/h lên 120 km/h.**  
+        - **Tốc độ tối đa trong khu vực đô thị giảm từ 60 km/h xuống 50 km/h để đảm bảo an toàn.** 
+    """
+    prompt_template = PromptTemplate(
+        input_variables=["query", "context_old", "context_new"],
+        template=template,
+    )
+    final_prompt = prompt_template.format(query = query,
+                                        context_old = context_old, 
+                                        context_new = context_new)
+    if model_choice == "gemini-1.5-pro":
+        llm = get_gemini_pro()
+        response = llm(final_prompt)
+        
+    elif model_choice == "gemini-1.5-flash":
+        llm = get_gemini_flash()
+        response = llm(final_prompt)
+    return response
+
+def legal_response(query: str, model_choice, context: list[LC_Document], chat_history) -> str: 
+    template = """
+        # Bạn là một chuyên gia về luật giao thông đường bộ
+
+        Nhiệm vụ của bạn là cung cấp câu trả lời cho câu hỏi của người dùng thông qua context được truyền vào.
+        
+        Đây là lịch sử đoạn chat trước đó:
+        {chat_history}
+        
+        ## Yêu cầu về lịch sử đoạn chat:
+        - Lịch sử đoạn chat sẽ được sử dụng để tương tác với người dùng.
+        - Nếu người dùng có hỏi về câu hỏi liên quan tới lịch sử đoạn chat thì dựa vào lịch sử đoạn chat để trả lời.
+        
+        Đây là câu hỏi của người dùng: {query}
+        
+        Dưới đây context được cung cấp để bạn trả lời câu hỏi:   
+        {context}
+        
+        ## Nếu context không liên quan tới câu hỏi:
+        - Trả lời: "Không tìm thầy thông tin liên quan tới câu hỏi này."
+        
+        ## Yêu cầu của nội dung câu trả lời:
+        - Hãy ngắt dòng trong phần nội dung để in ra một cách hợp lý, dễ đọc.
+        - Khi ngắt dòng thì chữ đầu dòng phải viết hoa.
+        - Trong nội dung khi có các ý nhỏ như a), b), c) thì hãy sắp xếp theo thứ tự và ngắt dòng giữa các ý nhỏ a), b), c), ... đó.
+        - Trong context bao gồm page_content chứa nội dung văn bản và metadata của băn bản.
+        - Metadata của văn bản bao gồm title, source, và article_title và page_content là nội dung câu trả lời được dùng trong format dưới đây.
+        - Khi người dùng yêu cầu tóm tắt lại nội dung văn bản thì trả lời ngắn gọn và súc tích. Đoạn tóm tắt sẽ được format theo format của câu trả lời và nội dung sẽ được trình bày ngắn gọn và súc tích nhất có thể.
+        
         
         Ví dụ về format của câu trả lời:
         Nếu context có nội dung sau:  
@@ -294,6 +262,7 @@ def legal_response(query: str, model_choice, context: list[LC_Document], chat_hi
         \ta) Giải thích rõ.\n
         \tb) Áp dụng biện pháp ngăn chặn.\n 
         \tc) Sử dụng vũ lực khi cần thiết.\n
+        Tóm lại: ...
 
         
         Đây là format của câu trả lời:
@@ -302,62 +271,84 @@ def legal_response(query: str, model_choice, context: list[LC_Document], chat_hi
         **<article>:** <article_title>\n
         Nội dung:\n 
         <page_content>
+        Tóm lại: ... (Nêu ra ý chính liên quan tới câu hỏi người dùng)
         """
     
-    few_shot_prompt = FewShotPromptTemplate(
-        examples=examples,
-        example_prompt=example_template,
-        prefix=prefix,
-        suffix="Human: {question}\nAI:",
-        input_variables=["chat_history", "question", "context"],
+    prompt_template = PromptTemplate(
+        input_variables=["chat_history", "query", "context"],
+        template=template,
     )
-    final_prompt = few_shot_prompt.format(chat_history = chat_history,
-                                          question = query, 
+    final_prompt = prompt_template.format(chat_history = chat_history,
+                                          query = query, 
                                           context= context)
-    
-    if model_choice == "Vertex":
-        llm = get_vertex_llm()
-        response = llm.generate_content(final_prompt).text
-        
-    elif model_choice == "Gemini":
-        llm = get_gemini_llm()
+       
+    if model_choice == "gemini-1.5-pro":
+        llm = get_gemini_pro()
         response = llm(final_prompt)
-    # response = llm.generate_content(final_prompt)
+        
+    elif model_choice == "gemini-1.5-flash":
+        llm = get_gemini_flash()
+        response = llm(final_prompt)
     return response
 
 def normal_response(query: str, model_choice, chat_history) -> str:
-    prompt_template = """
-    Bạn là một chatbot trả lời những câu hỏi về normal chatting.
-    Công việc của bạn là trả lời các câu hỏi đó bằng tiếng Việt nếu các câu query không phải là tiếng Viêt thì vẫn trả lời bằng tiếng Việt.
-    Đây là lịch sử đoạn chat trước đó:
-    {chat_history}
-    Yêu cầu về lịch sử đoạn chat:
-    - Nếu người dùng hỏi lại câu đã có trong đoạn chat thì sử dụng lại câu trả lời trước đó để trả lời.
+    template = """
+        Bạn là một chatbot hỗ trợ người dùng về luật giao thông đường bộ tại Việt Nam.
+        Nhưng công việc chính của bạn là phản hồi các câu hỏi về chào hỏi, giao tiếp cơ bản (normal chatting).
+        
+        ## Nguyên tắc phản hồi:
+        - Nếu câu hỏi liên quan đến luật giao thông, hãy cung cấp thông tin chi tiết dựa trên dữ liệu có sẵn.
+        - Nếu câu hỏi thuộc về chào hỏi, giao tiếp cơ bản, hãy phản hồi một cách tự nhiên, thân thiện.
+        - Nếu câu hỏi bằng tiếng Anh nhưng thuộc chủ đề giao tiếp cơ bản, hãy trả lời bằng tiếng Việt.
+        - Nếu câu hỏi không liên quan đến luật giao thông hoặc giao tiếp cơ bản, hãy trả lời rằng bạn chỉ hỗ trợ trong phạm vi này.
+
+        ## Lịch sử đoạn chat:
+        {chat_history}
+        
+        ## Câu hỏi từ người dùng:
+        {query}
+        
+        ## Quy tắc phản hồi:
+        - Nếu người dùng chào hỏi: Trả lời thân thiện, có thể hỏi thăm lại.
+        - Nếu người dùng hỏi về chatbot: Giới thiệu bạn là một trợ lý ảo chuyên về luật giao thông.
+        - Nếu người dùng hỏi về cảm xúc của chatbot: Nhấn mạnh rằng bạn là AI nhưng vẫn luôn sẵn sàng hỗ trợ.
+        - Nếu người dùng hỏi về thời tiết: Gợi ý họ kiểm tra thông tin trên các nền tảng thời tiết trực tuyến.
+        - Nếu người dùng hỏi một nội dung không phù hợp: Từ chối lịch sự.
+
+        ## Ví dụ phản hồi:
+
+        - **Người dùng:** "Xin chào!"  
+        **Trả lời:** "Chào bạn! Tôi là trợ lý ảo hỗ trợ tư vấn luật giao thông. Bạn cần giúp gì không?"  
+
+        - **Người dùng:** "Bạn có khỏe không?"  
+        **Trả lời:** "Cảm ơn bạn đã hỏi! Tôi là AI nên không có cảm xúc, nhưng tôi luôn sẵn sàng hỗ trợ bạn."  
+
+        - **Người dùng:** "Bạn có thể hát một bài không?"  
+        **Trả lời:** "Tôi không thể hát, nhưng tôi có thể giúp bạn với những câu hỏi về luật giao thông!"  
+
+        - **Người dùng:** "Who are you?"  
+        **Trả lời:** "Tôi là một trợ lý ảo hỗ trợ luật giao thông tại Việt Nam. Bạn cần hỏi gì không?"  
+
+        - **Người dùng:** "Bạn có thể tư vấn luật giao thông không?"  
+        **Trả lời:** "Tất nhiên! Bạn hãy cho tôi biết vấn đề bạn cần tư vấn nhé."  
     """
+
     # Định nghĩa template
-    template = ChatPromptTemplate([
-        ("system", prompt_template),
-        ("human", "{query}"),
-    ])
+    prompt_template = PromptTemplate(
+        input_variables=["chat_history", "question"],
+        template=template
+    )
     
     # Tạo prompt từ template và thay thế placeholder
-    prompt_value = template.invoke({"query": query, "chat_history": chat_history})  # Trả về ChatPromptValue
-    prompt = prompt_value.to_string()  # Chuyển đổi thành chuỗi
+    final_prompt = prompt_template.format(query = query, 
+                                   chat_history = chat_history)  # Trả về ChatPromptValue
     
-    # Gửi prompt đến LLM và nhận phản hồi
-    if model_choice == "Vertex":
-        llm = get_vertex_llm()
-        response = llm.generate_content(prompt).text
+    # Gửi prompt đến LLM và nhận phản hồi 
+    if model_choice == "gemini-1.5-pro":
+        llm = get_gemini_pro()
+        response = llm(final_prompt)
         
-    elif model_choice == "Gemini":
-        llm = get_gemini_llm()
-        response = llm(prompt)
-    # response = llm.generate_content(prompt)
+    elif model_choice == "gemini-1.5-flash":
+        llm = get_gemini_flash()
+        response = llm(final_prompt)
     return response
-
-# prompt = "Người đi bộ có được phép băng qua đường tại nơi không có vạch kẻ đường không?"
-# llm = get_gemini_llm()
-# retriever = get_retriever("new-documents-hybrid")
-# encode_model = get_encoder_model()
-# result = original_ranker(prompt, encode_model, retriever)
-# print(result)

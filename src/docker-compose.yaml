@@ -1,10 +1,22 @@
-version: "3"
 services:
   postgres:
-    build: ./
+    image: ankane/pgvector
+    container_name: postgres
+    restart: always
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: duongw
     ports:
       - "5432:5432"
-    environment:
-      POSTGRES_USER: duongw
-      POSTGRES_PASSWORD: duongw
-      POSTGRES_DB: vectordb
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    command: >
+      bash -c "
+      docker-entrypoint.sh postgres & 
+      sleep 5 && 
+      psql -U $$POSTGRES_USER -c 'CREATE DATABASE new_legal;' &&
+      psql -U $$POSTGRES_USER -c 'CREATE DATABASE old_legal;' &&
+      wait"
+      
+volumes:
+  pgdata:

@@ -2,7 +2,7 @@ import re, glob
 import streamlit as st
 from pathlib import Path
 from docx import Document
-from postgres import get_storage, PostgresStore
+from postgres_modified import get_storage, PostgresStore
 from langchain.schema import Document as LC_Document
 from langchain.retrievers import PineconeHybridSearchRetriever, ParentDocumentRetriever
 from pinecone_text.sparse import BM25Encoder
@@ -97,6 +97,7 @@ def pinecone_hybrid_retriever(index_name: str,
                                               alpha=0.7)
     retriever.add_text(texts= list_docs, metadatas= list_metadatas)
     return retriever
+
 @st.cache_resource
 def get_retriever(index_name: str, 
                 embeddings_name: str = "BAAI/bge-m3", 
