@@ -84,6 +84,7 @@ def get_router(query: str, model_choice) -> str: # Vì chưa sử dụng đượ
         - Nếu câu hỏi chỉ rõ luật mới, trả lời: **"new"**
         - Nếu câu hỏi chỉ rõ luật cũ, trả lời: **"old"**
         - Nếu câu hỏi không liên quan đến luật giao thông, trả lời: **"none"**
+        - Nếu câu hỏi chỉ hỏi về việc có thể giúp trả lời về luật giao thông hay không, chưa nhắc tới câu hỏi về luật cụ thể thì trả lời: **"none"**
         
         3. Khi người dùng muốn so sánh luật cũ và luật mới:
         - Khi người dùng muốn so sánh luật cũ và luật mới và một trong hai luật cũ hoặc mới dựa trên query của người dùng, trả lời: **"compare"**
@@ -220,9 +221,9 @@ def compare_legal(query: str, model_choice, context_old: list[LC_Document], cont
 
 def legal_response(query: str, model_choice, context: list[LC_Document], chat_history) -> str: 
     template = """
-        # Bạn là một chuyên gia về luật giao thông đường bộ
-
-        Nhiệm vụ của bạn là cung cấp câu trả lời cho câu hỏi của người dùng thông qua context được truyền vào.
+        System: 
+        - Bạn là một chuyên gia về luật giao thông đường bộ
+        - Nhiệm vụ của bạn là cung cấp câu trả lời cho câu hỏi của người dùng thông qua context được truyền vào.
         
         Đây là lịch sử đoạn chat trước đó:
         {chat_history}
@@ -293,44 +294,21 @@ def legal_response(query: str, model_choice, context: list[LC_Document], chat_hi
 
 def normal_response(query: str, model_choice, chat_history) -> str:
     template = """
-        Bạn là một chatbot hỗ trợ người dùng về luật giao thông đường bộ tại Việt Nam.
-        Nhưng công việc chính của bạn là phản hồi các câu hỏi về chào hỏi, giao tiếp cơ bản (normal chatting).
+        System:  
+        - Bạn là một chatbot trả lời câu hỏi về normal chatting.
+        - Nhiệm vụ của bạn là trả lời câu query được cung cấp và hãy trả lời bằng tiếng Việt.
         
-        ## Nguyên tắc phản hồi:
-        - Nếu câu hỏi liên quan đến luật giao thông, hãy cung cấp thông tin chi tiết dựa trên dữ liệu có sẵn.
-        - Nếu câu hỏi thuộc về chào hỏi, giao tiếp cơ bản, hãy phản hồi một cách tự nhiên, thân thiện.
-        - Nếu câu hỏi bằng tiếng Anh nhưng thuộc chủ đề giao tiếp cơ bản, hãy trả lời bằng tiếng Việt.
-        - Nếu câu hỏi không liên quan đến luật giao thông hoặc giao tiếp cơ bản, hãy trả lời rằng bạn chỉ hỗ trợ trong phạm vi này.
-
-        ## Lịch sử đoạn chat:
+        Đây là lịch sử đoạn chat trước đó:
         {chat_history}
         
-        ## Câu hỏi từ người dùng:
+        Đây là câu query: 
         {query}
         
-        ## Quy tắc phản hồi:
-        - Nếu người dùng chào hỏi: Trả lời thân thiện, có thể hỏi thăm lại.
-        - Nếu người dùng hỏi về chatbot: Giới thiệu bạn là một trợ lý ảo chuyên về luật giao thông.
-        - Nếu người dùng hỏi về cảm xúc của chatbot: Nhấn mạnh rằng bạn là AI nhưng vẫn luôn sẵn sàng hỗ trợ.
-        - Nếu người dùng hỏi về thời tiết: Gợi ý họ kiểm tra thông tin trên các nền tảng thời tiết trực tuyến.
-        - Nếu người dùng hỏi một nội dung không phù hợp: Từ chối lịch sự.
-
-        ## Ví dụ phản hồi:
-
-        - **Người dùng:** "Xin chào!"  
-        **Trả lời:** "Chào bạn! Tôi là trợ lý ảo hỗ trợ tư vấn luật giao thông. Bạn cần giúp gì không?"  
-
-        - **Người dùng:** "Bạn có khỏe không?"  
-        **Trả lời:** "Cảm ơn bạn đã hỏi! Tôi là AI nên không có cảm xúc, nhưng tôi luôn sẵn sàng hỗ trợ bạn."  
-
-        - **Người dùng:** "Bạn có thể hát một bài không?"  
-        **Trả lời:** "Tôi không thể hát, nhưng tôi có thể giúp bạn với những câu hỏi về luật giao thông!"  
-
-        - **Người dùng:** "Who are you?"  
-        **Trả lời:** "Tôi là một trợ lý ảo hỗ trợ luật giao thông tại Việt Nam. Bạn cần hỏi gì không?"  
-
-        - **Người dùng:** "Bạn có thể tư vấn luật giao thông không?"  
-        **Trả lời:** "Tất nhiên! Bạn hãy cho tôi biết vấn đề bạn cần tư vấn nhé."  
+        - Khi bạn chào hỏi, và người dùng đáp lại nhưng chưa đưa ra câu hỏi cụ thể, hãy yêu cầu họ đưa ra câu hỏi cụ thể.
+        - Danh xưng được sử dụng là "tôi" và "bạn" để tạo cảm giác chuyên nghiệp.
+        - Tránh lặp lại câu trả lời cho cùng một câu hỏi để tạo cảm giác tự nhiên
+        
+        Đầu ra chỉ chứa nội dung trả lời của câu query. Không chứa những nội dung thừa thãi.
     """
 
     # Định nghĩa template

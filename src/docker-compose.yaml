@@ -9,14 +9,7 @@ services:
     ports:
       - "5432:5432"
     volumes:
-      - pgdata:/var/lib/postgresql/data
-    command: >
-      bash -c "
-      docker-entrypoint.sh postgres & 
-      sleep 5 && 
-      psql -U $$POSTGRES_USER -c 'CREATE DATABASE new_legal;' &&
-      psql -U $$POSTGRES_USER -c 'CREATE DATABASE old_legal;' &&
-      wait"
-      
+      - pgdata:/var/lib/postgresql/data"
+
 volumes:
   pgdata:

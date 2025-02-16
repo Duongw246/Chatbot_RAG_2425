@@ -21,8 +21,18 @@ pip install langchain_community
 ```sh
 docker compose up -d
 ```
+📌 Step 2: Create database
+```sh
+docker exec -it postgres psql -U postgres -c "CREATE DATABASE new_legal;"
+docker exec -it postgres psql -U postgres -c "CREATE DATABASE old_legal;"
 
-📌 Step 3: Restore Data to the Databases
+```
+📌 Step 3: Navigate to the Database Folder
+```sh
+cd database
+```
+
+📌 Step 4: Restore Data to the Databases
 Add data to new_legal:
 ```sh
 pg_restore -U postgres -d new_legal database/new_law.dump
