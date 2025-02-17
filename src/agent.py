@@ -19,7 +19,6 @@ def get_gemini_pro() -> GoogleGenerativeAI:
 def get_gemini_flash() -> GoogleGenerativeAI:
     return GoogleGenerativeAI(model="gemini-1.5-flash", google_api_key=GEMINI_API_KEY, temperature=0)
 
-
 def query_transform(query: str, model_choice) -> str:
     system_template = """
     Bạn là một chuyên gia về việc chuyển đổi câu hỏi.
@@ -65,11 +64,10 @@ def query_transform(query: str, model_choice) -> str:
         response = llm(final_prompt)
     return response
 
-def get_router(query: str, model_choice) -> str: # Vì chưa sử dụng được Agent nên sẽ tạm định nghĩa router ở đây
+def get_router(query: str, model_choice) -> str: 
     system_template = """
         Bạn là một chuyên gia phân loại câu hỏi, chuyên xác định xem câu hỏi có liên quan đến luật giao thông hay không.
-    
-        
+
         ### Hướng dẫn:
         1. **Phân loại câu hỏi liên quan đến luật giao thông:**
         - Nếu câu hỏi liên quan đến luật giao thông, trả lời: **"yes"**
@@ -209,7 +207,7 @@ def compare_legal(query: str, model_choice, context_old: list[LC_Document], cont
     )
     final_prompt = prompt_template.format(query = query,
                                         context_old = context_old, 
-                                        context_new = context_new)
+                                        context_new = context_new) 
     if model_choice == "gemini-1.5-pro":
         llm = get_gemini_pro()
         response = llm(final_prompt)
@@ -248,13 +246,20 @@ def legal_response(query: str, model_choice, context: list[LC_Document], chat_hi
         - Metadata của văn bản bao gồm title, source, và article_title và page_content là nội dung câu trả lời được dùng trong format dưới đây.
         - Khi người dùng yêu cầu tóm tắt lại nội dung văn bản thì trả lời ngắn gọn và súc tích. Đoạn tóm tắt sẽ được format theo format của câu trả lời và nội dung sẽ được trình bày ngắn gọn và súc tích nhất có thể.
         
-        
-        Ví dụ về format của câu trả lời:
+        # Ví dụ về format của câu trả lời:
         Nếu context có nội dung sau:  
         page_content: "1. Khi người tham gia giao thông không chấp hành: a) Giải thích rõ; b) Áp dụng biện pháp ngăn chặn; c) Sử dụng vũ lực khi cần thiết."
         metadata: "source": "36_2024_QH15_444251", "title": "Luật Giao thông", "article_title": "Điều 73" 
-        Câu trả lời cần được trình bày như sau:
         
+        ## Đây là format của câu trả lời:
+        **Nguồn văn bản:** <source>\n
+        **Tên văn bản:** <title>\n
+        **<article>:** <article_title>\n
+        Nội dung:\n 
+        <page_content>
+        Tóm lại: ... (Nêu ra ý chính liên quan tới câu hỏi người dùng)
+        
+        ## Câu trả lời cần được trình bày như sau:
         **Nguồn văn bản:** 36_2024_QH15_444251  
         **Tên văn bản:** Luật Giao thông  
         **Điều 73:**  
@@ -265,14 +270,28 @@ def legal_response(query: str, model_choice, context: list[LC_Document], chat_hi
         \tc) Sử dụng vũ lực khi cần thiết.\n
         Tóm lại: ...
 
+        ## Khi metadata không có thông tin và chỉ có source:
+        - Thông tin của source sẽ có tên của văn bản thì hãy bỏ phần path và chỉ lấy tên văn bản.
+        Ví dụ: "source": /content/drive/MyDrive/ITProject_data/new_law/168_2024_ND-CP_619502.docx -> "168_2024_ND-CP_619502"
         
-        Đây là format của câu trả lời:
+        ## Đây là format của câu trả lời khi trong metadata chỉ có source:
         **Nguồn văn bản:** <source>\n
-        **Tên văn bản:** <title>\n
-        **<article>:** <article_title>\n
         Nội dung:\n 
         <page_content>
         Tóm lại: ... (Nêu ra ý chính liên quan tới câu hỏi người dùng)
+        
+        So với khi metadata có thông tin và chỉ có source thì không cần phải trình bày tên văn bản và điều mà chỉ cần trình bày nội dung của văn bản.
+        Nguồn văn bản chỉ bao gồm tên văn bản chứ không chứa đuôi file.
+        
+        ## Câu trả lời cần được trình bày như sau khi metadata chỉ có source:
+        **Nguồn văn bản:** 36_2024_QH15_444251   
+        **Nội dung:**  
+        1. Khi người tham gia giao thông không chấp hành:\n
+        \ta) Giải thích rõ.\n
+        \tb) Áp dụng biện pháp ngăn chặn.\n 
+        \tc) Sử dụng vũ lực khi cần thiết.\n
+        Tóm lại: ...
+        
         """
     
     prompt_template = PromptTemplate(
@@ -319,7 +338,7 @@ def normal_response(query: str, model_choice, chat_history) -> str:
     
     # Tạo prompt từ template và thay thế placeholder
     final_prompt = prompt_template.format(query = query, 
-                                   chat_history = chat_history)  # Trả về ChatPromptValue
+                                   chat_history = chat_history) 
     
     # Gửi prompt đến LLM và nhận phản hồi 
     if model_choice == "gemini-1.5-pro":

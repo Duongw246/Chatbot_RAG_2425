@@ -7,8 +7,16 @@ Before starting, make sure you have installed:
 - [Python 3.x](https://www.python.org/) (if not installed)
 
 ---
+## 1️⃣ Set Up Docker & Database Image
+📌 Step 1: Start Docker
+Ensure that Docker is running on your system. If it is not started yet, launch Docker Desktop
 
-## 1️⃣ Install Required Python Libraries
+📌 Step 2: Pull the pgvector Image
+We will use ankane/pgvector for vector storage in PostgreSQL. Pull the latest image using:
+```sh
+docker pull ankane/pgvector:latest
+```
+## 2️⃣ Install Required Python Libraries
 Run the following commands to install the necessary dependencies:
 ```sh
 pip install langchain langchain_core langchain_text_splitters 
@@ -16,7 +24,7 @@ pip install langchain_google_genai
 pip install langchain_community
 ```
 
-## 2️⃣ Database Setup
+## 3️⃣ Database Setup
 📌 Step 1: Start PostgreSQL with Docker
 ```sh
 docker compose up -d
@@ -41,7 +49,7 @@ Add data to old_legal:
 ```sh
 pg_restore -U postgres -d old_legal database/old_law.dump
 ```
-## 3️⃣ Run the Application
+## 4️⃣ Run the Application
 Navigate to the src folder and start the Streamlit application:
 ```sh
 cd src

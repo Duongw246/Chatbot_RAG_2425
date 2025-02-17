@@ -1,7 +1,10 @@
 import time
 import random
+import threading
 import streamlit as st
-from seed_data import postgres_retriever
+from data_processing import (postgres_retriever,
+                            pinecone_retriever
+)
 from agent import (legal_response, 
                    normal_response,
                    compare_legal, 
@@ -54,6 +57,22 @@ def setup_sidebar():
                 index=0
             )
             st.caption("🔹 Model AI sẽ ảnh hưởng đến tốc độ và độ chính xác của câu trả lời.")
+          
+        with st.expander("🔎 Tính Năng Trích Xuất Văn Bản"):
+            retrieval_choice = st.selectbox(
+                "Chọn phương thức truy vấn:",
+                ["Hybrid retrieval", "Parent documents retrieval"],
+                index=0
+            )
+            st.caption("Tính năng này sẽ quyết định cách dữ liệu được truy xuất.")
+            
+            num_retrieval_docs = st.slider(
+                "🔢 Số lượng văn bản truy xuất:",
+                min_value=1,  
+                max_value=10,  
+                value=5 
+            )
+  
             
         with st.expander("🛠 Tuỳ Chọn Khác"):
             if st.button("🗑 Xóa cuộc trò chuyện", use_container_width=True):
@@ -62,7 +81,7 @@ def setup_sidebar():
             <small style='color: grey;'>Xóa lịch sử chat để bắt đầu cuộc trò chuyện mới.</small>
             """, unsafe_allow_html=True)
         
-    return model_choice
+    return model_choice, retrieval_choice, num_retrieval_docs
         
 def setup_chat_interface(model_choice):
     st.title("Legal Assistant")
@@ -96,8 +115,6 @@ def user_input(msgs, model_choice, new_retriever, old_retriever):
         router, status = router.split(",")
         router = router.strip(" ")
         status = status.strip(" ")
-        # st.markdown(router)
-        # st.markdown(status)
         transform_prompt = query_transform(prompt, model_choice)
         with st.chat_message("assistant"):
             response_placeholder = st.empty()
@@ -110,7 +127,6 @@ def user_input(msgs, model_choice, new_retriever, old_retriever):
                         timer_placeholder.caption(f"⏱️ Đang xử lý: {elapsed_time:.2f} giây")
                         time.sleep(0.1)
 
-                import threading
                 timer_thread = threading.Thread(target=update_timer, daemon=True)
                 timer_thread.start()
                 chat_history = [
@@ -119,21 +135,21 @@ def user_input(msgs, model_choice, new_retriever, old_retriever):
                 ]
                 if router == "yes":
                     if status == "new":
-                        st.caption("I'm in YES, NEW")
+                        st.caption("This is new legal")
                         context = new_retriever.invoke(transform_prompt)
                         
                     elif status == "old":
-                        st.caption("I'm in YES, OLD")
+                        st.caption("This is old legal")
                         context = old_retriever.invoke(transform_prompt)
 
                     response = legal_response(transform_prompt, model_choice, context, chat_history)
                         
                 elif router == "no":
-                    st.caption("I'm in NO")
+                    st.caption("This is normal chatting")
                     response = normal_response(transform_prompt, model_choice, chat_history)
                 
                 elif router == "compare":
-                    st.caption("I'm in COMPARE")
+                    st.caption("This is compare")
                     old_context = old_retriever.invoke(transform_prompt)
                     new_context = new_retriever.invoke(transform_prompt)
                     response =  compare_legal(transform_prompt, model_choice, old_context, new_context)
@@ -148,7 +164,7 @@ def user_input(msgs, model_choice, new_retriever, old_retriever):
                     for char in chunk:
                         response_content += char
                         response_placeholder.markdown(response_content)
-                end_time = time.time()  # Kết thúc đo thời gian
+                end_time = time.time() 
                 elapsed_time = end_time - start_time    
                 st.session_state['messages'].append({"role": "assistant", "content": response})
                 msgs.add_ai_message(response)
@@ -156,9 +172,17 @@ def user_input(msgs, model_choice, new_retriever, old_retriever):
                 timer_placeholder.caption(f"⏱️ Thời gian phản hồi: {elapsed_time:.2f} giây")
 def main():
     setup_page()
-    model_choice = setup_sidebar()
-    new_retriever = postgres_retriever(collection_name="vectordb", database_name="new_legal")
-    old_retriever = postgres_retriever(collection_name="old_vectordb", database_name="old_legal")
+    model_choice, retrieval_choice, num_retrieval_docs = setup_sidebar()
+    if retrieval_choice == "Parent documents retrieval":
+        new_retriever = postgres_retriever(collection_name="vectordb", database_name="new_legal")
+        old_retriever = postgres_retriever(collection_name="old_vectordb", database_name="old_legal")
+        new_retriever.search_kwargs = {"k": num_retrieval_docs}
+        old_retriever.search_kwargs = {"k": num_retrieval_docs}
+    else:
+        new_retriever = pinecone_retriever(index_name="new-documents-hybrid")
+        old_retriever = pinecone_retriever(index_name="old-documents-hybrid")
+        new_retriever.top_k = num_retrieval_docs
+        old_retriever.top_k = num_retrieval_docs
     msgs = setup_chat_interface(model_choice)
     user_input(msgs, model_choice, new_retriever, old_retriever)
     
